@@ -63,21 +63,38 @@ type z_stream
     end
 end
 
+type gz_header
+    text::Cint          # true if compressed data believed to be text */
+    time::Culong        # modification time */
+    xflags::Cint        # extra flags (not used when writing a gzip file) */
+    os::Cint            # operating system */
+    extra::Ptr{Uint8}   # pointer to extra field or Z_NULL if none */
+    extra_len::Cuint    # extra field length (valid if extra != Z_NULL) */
+    extra_max::Cuint    # space at extra (only when reading header) */
+    name::Ptr{Uint8}    # pointer to zero-terminated file name or Z_NULL */
+    name_max::Cuint     # space at name (only when reading header) */
+    comment::Ptr{Uint8} # pointer to zero-terminated comment or Z_NULL */
+    comm_max::Cuint     # space at comment (only when reading header) */
+    hcrc::Cint          # true if there was or will be a header crc */
+    done::Cint          # true when done reading gzip header (not used
+                        # when writing a gzip file)
+    gz_header() = new(0,0,0,0,0,0,0,0,0,0,0,0,0)
+end
 
 function zlib_version()
     ccall((:zlibVersion, :libz), Ptr{Uint8}, ())
 end
 
 
-function compress(input::Vector{Uint8}, level::Integer)
+function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false)
     if !(1 <= level <= 9)
         error("Invalid zlib compression level.")
     end
 
     strm = z_stream()
-    ret = ccall((:deflateInit_, :libz),
-                Int32, (Ptr{z_stream}, Int32, Ptr{Uint8}, Int32),
-                &strm, level, zlib_version(), sizeof(z_stream))
+    ret = ccall((:deflateInit2_, :libz),
+                Int32, (Ptr{z_stream}, Cint, Cint, Cint, Cint, Cint, Ptr{Uint8}, Int32),
+                &strm, level, 8, 15+gzip*16, 8, 0, zlib_version(), sizeof(z_stream))
 
     if ret != Z_OK
         error("Error initializing zlib deflate stream.")
@@ -85,10 +102,19 @@ function compress(input::Vector{Uint8}, level::Integer)
 
     strm.next_in = input
     strm.avail_in = length(input)
-    strm.total_in = length(input)
     output = Array(Uint8, 0)
     outbuf = Array(Uint8, 1024)
     ret = Z_OK
+
+    if gzip && false
+        hdr = gz_header()
+        ret = ccall((:deflateSetHeader, :libz),
+            Cint, (Ptr{z_stream}, Ptr{gz_header}),
+            &strm, &hdr)
+        if ret != Z_OK
+            error("Error setting gzip stream header.")
+        end
+    end
 
     while ret != Z_STREAM_END
         strm.avail_out = length(outbuf)
@@ -115,20 +141,20 @@ function compress(input::Vector{Uint8}, level::Integer)
 end
 
 
-function compress(input::String, level::Integer)
-    compress(convert(Vector{Uint8}, input), level)
+function compress(input::String, level::Integer, gzip::Bool=false)
+    compress(convert(Vector{Uint8}, input), level, gzip)
 end
 
 
-compress(input::Vector{Uint8}) = compress(input, 9)
-compress(input::String) = compress(input, 9)
+compress(input::Vector{Uint8}, gzip::Bool=false) = compress(input, 9, gzip)
+compress(input::String, gzip::Bool=false) = compress(input, 9, gzip)
 
 
 function decompress(input::Vector{Uint8})
     strm = z_stream()
-    ret = ccall((:inflateInit_, :libz),
-                Int32, (Ptr{z_stream}, Ptr{Uint8}, Int32),
-                &strm, zlib_version(), sizeof(z_stream))
+    ret = ccall((:inflateInit2_, :libz),
+                Int32, (Ptr{z_stream}, Cint, Ptr{Uint8}, Int32),
+                &strm, 47, zlib_version(), sizeof(z_stream))
 
     if ret != Z_OK
         error("Error initializing zlib inflate stream.")
@@ -148,7 +174,7 @@ function decompress(input::Vector{Uint8})
                     Int32, (Ptr{z_stream}, Int32),
                     &strm, Z_NO_FLUSH)
         if ret == Z_DATA_ERROR
-            error("Error: input is not zlib compressed data.")
+            error("Error: input is not zlib compressed data: $(bytestring(strm.msg))")
         elseif ret != Z_OK && ret != Z_STREAM_END
             error("Error in zlib inflate stream ($(ret)).")
         end
