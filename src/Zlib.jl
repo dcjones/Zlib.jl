@@ -25,12 +25,12 @@ const Z_VERSION_ERROR = -6
 # The zlib z_stream structure.
 type z_stream
     next_in::Ptr{Uint8}
-    avail_in::Uint32
-    total_in::Uint
+    avail_in::Cuint
+    total_in::Culong
 
     next_out::Ptr{Uint8}
-    avail_out::Uint32
-    total_out::Uint
+    avail_out::Cuint
+    total_out::Culong
 
     msg::Ptr{Uint8}
     state::Ptr{Void}
@@ -39,9 +39,9 @@ type z_stream
     zfree::Ptr{Void}
     opaque::Ptr{Void}
 
-    data_type::Int32
-    adler::Uint
-    reserved::Uint
+    data_type::Cint
+    adler::Culong
+    reserved::Culong
 
     function z_stream()
         strm = new()
