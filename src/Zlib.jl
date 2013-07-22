@@ -88,7 +88,7 @@ function zlib_version()
 end
 
 
-function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false)
+function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::Bool=false)
     if !(1 <= level <= 9)
         error("Invalid zlib compression level.")
     end
@@ -96,7 +96,7 @@ function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false)
     strm = z_stream()
     ret = ccall((:deflateInit2_, libz),
                 Int32, (Ptr{z_stream}, Cint, Cint, Cint, Cint, Cint, Ptr{Uint8}, Int32),
-                &strm, level, 8, 15+gzip*16, 8, 0, zlib_version(), sizeof(z_stream))
+                &strm, level, 8, raw? -15 : 15+gzip*16, 8, 0, zlib_version(), sizeof(z_stream))
 
     if ret != Z_OK
         error("Error initializing zlib deflate stream.")
@@ -143,20 +143,20 @@ function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false)
 end
 
 
-function compress(input::String, level::Integer, gzip::Bool=false)
-    compress(convert(Vector{Uint8}, input), level, gzip)
+function compress(input::String, level::Integer, gzip::Bool=false, raw::Bool=false)
+    compress(convert(Vector{Uint8}, input), level, gzip, raw)
 end
 
 
-compress(input::Vector{Uint8}, gzip::Bool=false) = compress(input, 9, gzip)
-compress(input::String, gzip::Bool=false) = compress(input, 9, gzip)
+compress(input::Vector{Uint8}, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
+compress(input::String, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
 
 
-function decompress(input::Vector{Uint8})
+function decompress(input::Vector{Uint8}, raw::Bool=false)
     strm = z_stream()
     ret = ccall((:inflateInit2_, libz),
                 Int32, (Ptr{z_stream}, Cint, Ptr{Uint8}, Int32),
-                &strm, 47, zlib_version(), sizeof(z_stream))
+                &strm, raw? -15 : 47, zlib_version(), sizeof(z_stream))
 
     if ret != Z_OK
         error("Error initializing zlib inflate stream.")
@@ -195,7 +195,7 @@ function decompress(input::Vector{Uint8})
 end
 
 
-decompress(input::String) = decompress(convert(Vector{Uint8}, input))
+decompress(input::String, raw::Bool=false) = decompress(convert(Vector{Uint8}, input), raw)
 
 
 end # module
