@@ -1,6 +1,8 @@
 
 module Zlib
 
+import Base: read, write, close
+
 export compress, decompress
 
 const Z_NO_FLUSH      = 0
@@ -87,8 +89,16 @@ function zlib_version()
     ccall((:zlibVersion, libz), Ptr{Uint8}, ())
 end
 
+type Writer <: IO
+    strm::z_stream
+    io::IO
+    closed::Bool
+    
+    Writer(strm::z_stream, io::IO, closed::Bool) =
+    	(w = new(strm, io, closed); finalizer(w, close); w)
+end
 
-function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::Bool=false)
+function Writer(io::IO, level::Integer, gzip::Bool=false, raw::Bool=false)
     if !(1 <= level <= 9)
         error("Invalid zlib compression level.")
     end
@@ -102,12 +112,6 @@ function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::B
         error("Error initializing zlib deflate stream.")
     end
 
-    strm.next_in = input
-    strm.avail_in = length(input)
-    output = Array(Uint8, 0)
-    outbuf = Array(Uint8, 1024)
-    ret = Z_OK
-
     if gzip && false
         hdr = gz_header()
         ret = ccall((:deflateSetHeader, libz),
@@ -118,28 +122,109 @@ function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::B
         end
     end
 
-    while ret != Z_STREAM_END
-        strm.avail_out = length(outbuf)
-        strm.next_out = outbuf
-        flush = strm.avail_in == 0 ? Z_FINISH : Z_NO_FLUSH
+    Writer(strm, io, false)
+end
+
+Writer(io::IO, gzip::Bool=false, raw::Bool=false) = Writer(io, 9, gzip, raw)
+
+function write(w::Writer, p::Ptr, nb::Integer)
+    w.strm.next_in = p
+    w.strm.avail_in = nb
+    outbuf = Array(Uint8, 1024)
+    
+    while true
+        w.strm.avail_out = length(outbuf)
+        w.strm.next_out = outbuf
+    
         ret = ccall((:deflate, libz),
                     Int32, (Ptr{z_stream}, Int32),
-                    &strm, flush)
+                    &w.strm, Z_NO_FLUSH)
+        if ret != Z_OK
+            error("Error in zlib deflate stream ($(ret)).")
+        end
+    
+        n = length(outbuf) - w.strm.avail_out
+        if n > 0 && write(w.io, outbuf[1:n]) != n
+            error("short write")
+        end
+        if w.strm.avail_out != 0
+            break
+        end
+    end
+    nb
+end
+
+# If this is not provided, Base.IO write methods will write
+# arrays one element at a time.
+function write{T}(w::Writer, a::Array{T})
+    if isbits(T)
+        write(w, pointer(a), length(a)*sizeof(T))
+    else
+        invoke(write, (IO, Array), w, a)
+    end
+end
+
+# Copied from Julia base/io.jl
+function write{T,N,A<:Array}(w::Writer, a::SubArray{T,N,A})
+    if !isbits(T) || stride(a,1)!=1
+        return invoke(write, (Any, AbstractArray), s, a)
+    end
+    colsz = size(a,1)*sizeof(T)
+    if N<=1
+        return write(s, pointer(a, 1), colsz)
+    else
+        cartesianmap((idxs...)->write(w, pointer(a, idxs), colsz),
+                     tuple(1, size(a)[2:]...))
+        return colsz*Base.trailingsize(a,2)
+    end
+end
+
+function write(w::Writer, b::Uint8)
+    write(w, Uint8[b])
+end
+
+function read(::Writer, args...)
+    error("reading write-only stream")
+end
+
+function close(w::Writer)
+    if w.closed
+    	return
+    end
+    w.closed = true
+    
+    # flush zlib buffer
+    w.strm.next_in = Array(Uint8, 0)
+    w.strm.avail_in = 0
+    outbuf = Array(Uint8, 1024)
+    ret = Z_OK
+    while ret != Z_STREAM_END
+        w.strm.avail_out = length(outbuf)
+        w.strm.next_out = outbuf
+        ret = ccall((:deflate, libz),
+                    Int32, (Ptr{z_stream}, Int32),
+                    &w.strm, Z_FINISH)
         if ret != Z_OK && ret != Z_STREAM_END
             error("Error in zlib deflate stream ($(ret)).")
         end
-
-        if length(outbuf) - strm.avail_out > 0
-            append!(output, outbuf[1:(length(outbuf) - strm.avail_out)])
+        n = length(outbuf) - w.strm.avail_out
+        if n > 0 && write(w.io, outbuf[1:n]) != n
+            error("short write")
         end
     end
-
-    ret = ccall((:deflateEnd, libz), Int32, (Ptr{z_stream},), &strm)
+    
+    ret = ccall((:deflateEnd, libz), Int32, (Ptr{z_stream},), &w.strm)
     if ret == Z_STREAM_ERROR
         error("Error: zlib deflate stream was prematurely freed.")
     end
+end
 
-    output
+function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::Bool=false)
+    b = IOBuffer()
+    w = Writer(b, level, gzip, raw)
+    write(w, input)
+    close(w)
+    takebuf_array(b)
 end
 
 
