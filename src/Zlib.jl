@@ -1,7 +1,7 @@
 
 module Zlib
 
-import Base: read, write, close
+import Base: read, write, close, eof
 
 export compress, decompress
 
@@ -184,7 +184,7 @@ function write(w::Writer, b::Uint8)
 end
 
 function read(::Writer, args...)
-    error("reading write-only stream")
+    error("reading from write-only stream")
 end
 
 function close(w::Writer)
@@ -193,7 +193,7 @@ function close(w::Writer)
     end
     w.closed = true
     
-    # flush zlib buffer
+    # flush zlib buffer using Z_FINISH
     w.strm.next_in = Array(Uint8, 0)
     w.strm.avail_in = 0
     outbuf = Array(Uint8, 1024)
@@ -237,46 +237,117 @@ compress(input::Vector{Uint8}, gzip::Bool=false, raw::Bool=false) = compress(inp
 compress(input::String, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
 
 
-function decompress(input::Vector{Uint8}, raw::Bool=false)
+type Reader <: IO
+    strm::z_stream
+    io::IO
+    buf::Vector{Uint8}
+    closed::Bool
+    
+    Reader(strm::z_stream, io::IO, buf::Vector{Uint8}, closed::Bool) =
+        (r = new(strm, io, buf, closed); finalizer(r, close); r)
+end
+
+function Reader(io::IO, raw::Bool=false)
     strm = z_stream()
     ret = ccall((:inflateInit2_, libz),
                 Int32, (Ptr{z_stream}, Cint, Ptr{Uint8}, Int32),
                 &strm, raw? -15 : 47, zlib_version(), sizeof(z_stream))
-
     if ret != Z_OK
         error("Error initializing zlib inflate stream.")
     end
+    
+    Reader(strm, io, Uint8[], false)
+end
 
-    strm.next_in = input
-    strm.avail_in = length(input)
-    strm.total_in = length(input)
-    output = Array(Uint8, 0)
-    outbuf = Array(Uint8, 1024)
+# Fill up the buffer with at least minlen bytes of uncompressed data,
+# unless we have already reached EOF.
+function fillbuf(r::Reader, minlen::Integer)
     ret = Z_OK
-
-    while ret != Z_STREAM_END
-        strm.next_out = outbuf
-        strm.avail_out = length(outbuf)
-        ret = ccall((:inflate, libz),
-                    Int32, (Ptr{z_stream}, Int32),
-                    &strm, Z_NO_FLUSH)
-        if ret == Z_DATA_ERROR
-            error("Error: input is not zlib compressed data: $(bytestring(strm.msg))")
-        elseif ret != Z_OK && ret != Z_STREAM_END
-            error("Error in zlib inflate stream ($(ret)).")
-        end
-
-        if length(outbuf) - strm.avail_out > 0
-            append!(output, outbuf[1:(length(outbuf) - strm.avail_out)])
+    while length(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
+        input = read(r.io, Uint8, min(nb_available(r.io), 1024))
+        r.strm.next_in = input
+        r.strm.avail_in = length(input)
+        r.strm.total_in = length(input)
+        outbuf = Array(Uint8, 1024)
+        
+        while true
+            r.strm.next_out = outbuf
+            r.strm.avail_out = length(outbuf)
+            ret = ccall((:inflate, libz),
+                        Int32, (Ptr{z_stream}, Int32),
+                        &r.strm, Z_NO_FLUSH)
+            if ret == Z_DATA_ERROR
+                error("Error: input is not zlib compressed data: $(bytestring(r.strm.msg))")
+            elseif ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR
+                error("Error in zlib inflate stream ($(ret)).")
+            end
+            if length(outbuf) - r.strm.avail_out > 0
+                append!(r.buf, outbuf[1:(length(outbuf) - r.strm.avail_out)])
+            end
+            if r.strm.avail_out != 0
+                break
+            end
         end
     end
+    length(r.buf)
+end
 
-    ret = ccall((:inflateEnd, libz), Int32, (Ptr{z_stream},), &strm)
+function read{T}(r::Reader, a::Array{T})
+    if isbits(T)
+        nb = length(a)*sizeof(T)
+        if fillbuf(r, nb) < nb
+            throw(EOFError())
+        end
+        b = reinterpret(Uint8, reshape(a, length(a)))
+        b[:] = r.buf[1:nb]
+        r.buf = r.buf[nb+1:end]
+    else
+        invoke(read, (IO, Array), r, a)
+    end
+    a
+end
+
+# This function needs to be fast because readbytes, readall, etc.
+# uses it. Avoid function calls when possible.
+function read(r::Reader, ::Type{Uint8})
+    if length(r.buf) < 1 && fillbuf(r, 1) < 1
+        throw(EOFError())
+    end
+    b = r.buf[1]
+    r.buf = r.buf[2:end]
+    b
+end
+
+function close(r::Reader)
+    if r.closed
+        return
+    end
+    r.closed = true
+    
+    ret = ccall((:inflateEnd, libz), Int32, (Ptr{z_stream},), &r.strm)
     if ret == Z_STREAM_ERROR
         error("Error: zlib inflate stream was prematurely freed.")
     end
+end
 
-    output
+function eof(r::Reader)
+    # Detecting EOF is somewhat tricky: we might not have reached
+    # EOF in r.io but decompressing the remaining data might
+    # yield no uncompressed data. So, make sure we can get at least
+    # one more byte of decompressed data before we say we haven't
+    # reached EOF yet.
+    fillbuf(r, 1) == 0 && eof(r.io)
+end
+
+function write(::Reader, args...)
+    error("writing to read-only stream")
+end
+
+function decompress(input::Vector{Uint8}, raw::Bool=false)
+    r = Reader(IOBuffer(input), raw)
+    b = readbytes(r)
+    close(r)
+    b
 end
 
 
