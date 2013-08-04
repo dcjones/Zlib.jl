@@ -3,12 +3,12 @@ using Zlib
 
 data = convert(Vector{Uint8}, rand(1:255, 1000000))
 decompressed = decompress(compress(data))
-@assert data == decompressed
+@test data == decompressed
 
 decompressed = decompress(compress(data, false, true), true)
-@assert data == decompressed
+@test data == decompressed
 
-@assert length(decompress(compress(""))) == 0
+@test length(decompress(compress(""))) == 0
 
 
 b = IOBuffer()
@@ -19,7 +19,7 @@ while n < length(data)
 end
 close(w)
 seekstart(b)
-@assert data == decompress(readbytes(b))
+@test data == decompress(readbytes(b))
 
 seekstart(b)
 r = Zlib.Reader(b)
@@ -27,7 +27,7 @@ decompressed = Array(Uint8, 0)
 while !eof(r)
     append!(decompressed, read(r, Uint8, 200000))
 end
-@assert data == decompressed
+@test data == decompressed
 
 
 data = {
