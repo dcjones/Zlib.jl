@@ -44,7 +44,7 @@ b = IOBuffer()
 @test_throws read(w, Uint8, 1)
 w = Zlib.Writer(b)
 for x in data
-	write(w, x)
+    write(w, x)
 end
 close(w)
 

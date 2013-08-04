@@ -95,7 +95,7 @@ type Writer <: IO
     closed::Bool
     
     Writer(strm::z_stream, io::IO, closed::Bool) =
-    	(w = new(strm, io, closed); finalizer(w, close); w)
+        (w = new(strm, io, closed); finalizer(w, close); w)
 end
 
 function Writer(io::IO, level::Integer, gzip::Bool=false, raw::Bool=false)
@@ -189,7 +189,7 @@ end
 
 function close(w::Writer)
     if w.closed
-    	return
+        return
     end
     w.closed = true
     
