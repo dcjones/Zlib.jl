@@ -68,18 +68,18 @@ type z_stream
 end
 
 type gz_header
-    text::Cint          # true if compressed data believed to be text */
-    time::Culong        # modification time */
-    xflags::Cint        # extra flags (not used when writing a gzip file) */
-    os::Cint            # operating system */
-    extra::Ptr{Uint8}   # pointer to extra field or Z_NULL if none */
-    extra_len::Cuint    # extra field length (valid if extra != Z_NULL) */
-    extra_max::Cuint    # space at extra (only when reading header) */
-    name::Ptr{Uint8}    # pointer to zero-terminated file name or Z_NULL */
-    name_max::Cuint     # space at name (only when reading header) */
-    comment::Ptr{Uint8} # pointer to zero-terminated comment or Z_NULL */
-    comm_max::Cuint     # space at comment (only when reading header) */
-    hcrc::Cint          # true if there was or will be a header crc */
+    text::Cint          # true if compressed data believed to be text
+    time::Culong        # modification time
+    xflags::Cint        # extra flags (not used when writing a gzip file)
+    os::Cint            # operating system
+    extra::Ptr{Uint8}   # pointer to extra field or Z_NULL if none
+    extra_len::Cuint    # extra field length (valid if extra != Z_NULL)
+    extra_max::Cuint    # space at extra (only when reading header)
+    name::Ptr{Uint8}    # pointer to zero-terminated file name or Z_NULL
+    name_max::Cuint     # space at name (only when reading header)
+    comment::Ptr{Uint8} # pointer to zero-terminated comment or Z_NULL
+    comm_max::Cuint     # space at comment (only when reading header)
+    hcrc::Cint          # true if there was or will be a header crc
     done::Cint          # true when done reading gzip header (not used
                         # when writing a gzip file)
     gz_header() = new(0,0,0,0,0,0,0,0,0,0,0,0,0)
@@ -93,7 +93,7 @@ type Writer <: IO
     strm::z_stream
     io::IO
     closed::Bool
-    
+
     Writer(strm::z_stream, io::IO, closed::Bool) =
         (w = new(strm, io, closed); finalizer(w, close); w)
 end
@@ -131,18 +131,18 @@ function write(w::Writer, p::Ptr, nb::Integer)
     w.strm.next_in = p
     w.strm.avail_in = nb
     outbuf = Array(Uint8, 1024)
-    
+
     while true
         w.strm.avail_out = length(outbuf)
         w.strm.next_out = outbuf
-    
+
         ret = ccall((:deflate, libz),
                     Int32, (Ptr{z_stream}, Int32),
                     &w.strm, Z_NO_FLUSH)
         if ret != Z_OK
             error("Error in zlib deflate stream ($(ret)).")
         end
-    
+
         n = length(outbuf) - w.strm.avail_out
         if n > 0 && write(w.io, outbuf[1:n]) != n
             error("short write")
@@ -192,7 +192,7 @@ function close(w::Writer)
         return
     end
     w.closed = true
-    
+
     # flush zlib buffer using Z_FINISH
     w.strm.next_in = Array(Uint8, 0)
     w.strm.avail_in = 0
@@ -212,7 +212,7 @@ function close(w::Writer)
             error("short write")
         end
     end
-    
+
     ret = ccall((:deflateEnd, libz), Int32, (Ptr{z_stream},), &w.strm)
     if ret == Z_STREAM_ERROR
         error("Error: zlib deflate stream was prematurely freed.")
@@ -242,7 +242,7 @@ type Reader <: IO
     io::IO
     buf::Vector{Uint8}
     closed::Bool
-    
+
     Reader(strm::z_stream, io::IO, buf::Vector{Uint8}, closed::Bool) =
         (r = new(strm, io, buf, closed); finalizer(r, close); r)
 end
@@ -255,7 +255,7 @@ function Reader(io::IO, raw::Bool=false)
     if ret != Z_OK
         error("Error initializing zlib inflate stream.")
     end
-    
+
     Reader(strm, io, Uint8[], false)
 end
 
@@ -269,7 +269,7 @@ function fillbuf(r::Reader, minlen::Integer)
         r.strm.avail_in = length(input)
         r.strm.total_in = length(input)
         outbuf = Array(Uint8, 1024)
-        
+
         while true
             r.strm.next_out = outbuf
             r.strm.avail_out = length(outbuf)
@@ -323,7 +323,7 @@ function close(r::Reader)
         return
     end
     r.closed = true
-    
+
     ret = ccall((:inflateEnd, libz), Int32, (Ptr{z_stream},), &r.strm)
     if ret == Z_STREAM_ERROR
         error("Error: zlib inflate stream was prematurely freed.")
