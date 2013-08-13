@@ -3,7 +3,7 @@ module Zlib
 
 import Base: read, write, close, eof
 
-export compress, decompress
+export compress, decompress, crc32
 
 const Z_NO_FLUSH      = 0
 const Z_PARTIAL_FLUSH = 1
@@ -353,5 +353,13 @@ end
 
 decompress(input::String, raw::Bool=false) = decompress(convert(Vector{Uint8}, input), raw)
 
+
+function crc32(data::Vector{Uint8}, crc::Integer=0)
+    uint32(ccall((:crc32, libz),
+                 Culong, (Culong, Ptr{Uint8}, Cuint),
+                 crc, data, length(data)))
+end
+
+crc32(data::String, crc::Integer=0) = crc32(convert(Vector{Uint8}, data), crc)
 
 end # module

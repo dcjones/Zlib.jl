@@ -66,3 +66,11 @@ for x in data
     end
 end
 close(r)
+
+
+@test crc32("") == 0
+@test crc32("hello") == 0x3610a686
+@test crc32("Julia programming language") == 0xfc485364
+crc = crc32("Julia programming")
+@test crc == 0xc7db4271
+@test crc32(" language", crc) == 0xfc485364
