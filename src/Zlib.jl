@@ -183,10 +183,6 @@ function write(w::Writer, b::Uint8)
     write(w, Uint8[b])
 end
 
-function read(::Writer, args...)
-    error("reading from write-only stream")
-end
-
 function close(w::Writer)
     if w.closed
         return
@@ -337,10 +333,6 @@ function eof(r::Reader)
     # one more byte of decompressed data before we say we haven't
     # reached EOF yet.
     fillbuf(r, 1) == 0 && eof(r.io)
-end
-
-function write(::Reader, args...)
-    error("writing to read-only stream")
 end
 
 function decompress(input::Vector{Uint8}, raw::Bool=false)
