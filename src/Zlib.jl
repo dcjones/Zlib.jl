@@ -1,7 +1,7 @@
 
 module Zlib
 
-import Base: read, write, close, eof
+import Base: read, readbytes!, write, close, eof
 
 export compress, decompress, crc32
 
@@ -236,10 +236,10 @@ compress(input::String, gzip::Bool=false, raw::Bool=false) = compress(input, 9, 
 type Reader <: IO
     strm::z_stream
     io::IO
-    buf::Vector{Uint8}
+    buf::IOBuffer
     closed::Bool
 
-    Reader(strm::z_stream, io::IO, buf::Vector{Uint8}, closed::Bool) =
+    Reader(strm::z_stream, io::IO, buf::IOBuffer, closed::Bool) =
         (r = new(strm, io, buf, closed); finalizer(r, close); r)
 end
 
@@ -252,14 +252,14 @@ function Reader(io::IO, raw::Bool=false)
         error("Error initializing zlib inflate stream.")
     end
 
-    Reader(strm, io, Uint8[], false)
+    Reader(strm, io, PipeBuffer(), false)
 end
 
 # Fill up the buffer with at least minlen bytes of uncompressed data,
 # unless we have already reached EOF.
 function fillbuf(r::Reader, minlen::Integer)
     ret = Z_OK
-    while length(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
+    while nb_available(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
         input = read(r.io, Uint8, min(nb_available(r.io), 1024))
         r.strm.next_in = input
         r.strm.avail_in = length(input)
@@ -278,14 +278,14 @@ function fillbuf(r::Reader, minlen::Integer)
                 error("Error in zlib inflate stream ($(ret)).")
             end
             if length(outbuf) - r.strm.avail_out > 0
-                append!(r.buf, outbuf[1:(length(outbuf) - r.strm.avail_out)])
+                write(r.buf, pointer(outbuf), length(outbuf) - r.strm.avail_out)
             end
             if r.strm.avail_out != 0
                 break
             end
         end
     end
-    length(r.buf)
+    nb_available(r.buf)
 end
 
 function read{T}(r::Reader, a::Array{T})
@@ -294,25 +294,25 @@ function read{T}(r::Reader, a::Array{T})
         if fillbuf(r, nb) < nb
             throw(EOFError())
         end
-        b = reinterpret(Uint8, reshape(a, length(a)))
-        b[:] = r.buf[1:nb]
-        r.buf = r.buf[nb+1:end]
+        read(r.buf, a)
     else
         invoke(read, (IO, Array), r, a)
     end
     a
 end
 
-# This function needs to be fast because readbytes, readall, etc.
-# uses it. Avoid function calls when possible.
+# This function needs to be fast because other read calls use it.
 function read(r::Reader, ::Type{Uint8})
-    if length(r.buf) < 1 && fillbuf(r, 1) < 1
+    if nb_available(r.buf) < 1 && fillbuf(r, 1) < 1
         throw(EOFError())
     end
-    b = r.buf[1]
-    r.buf = r.buf[2:end]
-    b
+    read(r.buf, Uint8)
 end
+
+# This is faster than using the generic implementation in Base. We use
+# it (indirectly) for decompress below.
+readbytes!(r::Reader, b::AbstractArray{Uint8}, nb=length(b)) =
+    readbytes!(r.buf, b, fillbuf(r, nb))
 
 function close(r::Reader)
     if r.closed
