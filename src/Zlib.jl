@@ -1,7 +1,7 @@
 
 module Zlib
 
-import Base: read, readbytes!, write, close, eof
+import Base: read, readuntil, readbytes!, write, close, eof
 
 export compress, decompress, crc32
 
@@ -238,12 +238,13 @@ type Reader <: IO
     io::IO
     buf::IOBuffer
     closed::Bool
+    bufsize::Int
 
-    Reader(strm::z_stream, io::IO, buf::IOBuffer, closed::Bool) =
-        (r = new(strm, io, buf, closed); finalizer(r, close); r)
+    Reader(strm::z_stream, io::IO, buf::IOBuffer, closed::Bool, bufsize::Int) =
+        (r = new(strm, io, buf, closed, bufsize); finalizer(r, close); r)
 end
 
-function Reader(io::IO, raw::Bool=false)
+function Reader(io::IO, raw::Bool=false; bufsize::Int=4096)
     strm = z_stream()
     ret = ccall((:inflateInit2_, libz),
                 Int32, (Ptr{z_stream}, Cint, Ptr{Uint8}, Int32),
@@ -252,7 +253,7 @@ function Reader(io::IO, raw::Bool=false)
         error("Error initializing zlib inflate stream.")
     end
 
-    Reader(strm, io, PipeBuffer(), false)
+    Reader(strm, io, PipeBuffer(), false, bufsize)
 end
 
 # Fill up the buffer with at least minlen bytes of uncompressed data,
@@ -260,15 +261,17 @@ end
 function fillbuf(r::Reader, minlen::Integer)
     ret = Z_OK
     while nb_available(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
-        input = read(r.io, Uint8, min(nb_available(r.io), 1024))
+        input = read(r.io, Uint8, min(nb_available(r.io), r.bufsize))
         r.strm.next_in = input
         r.strm.avail_in = length(input)
         r.strm.total_in = length(input)
-        outbuf = Array(Uint8, 1024)
+        #outbuf = Array(Uint8, r.bufsize)
 
         while true
-            r.strm.next_out = outbuf
-            r.strm.avail_out = length(outbuf)
+            #r.strm.next_out = outbuf
+            #r.strm.avail_out = length(outbuf)
+            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, int32(r.bufsize))
+            actual_bufsize_out = r.strm.avail_out
             ret = ccall((:inflate, libz),
                         Int32, (Ptr{z_stream}, Int32),
                         &r.strm, Z_NO_FLUSH)
@@ -277,8 +280,11 @@ function fillbuf(r::Reader, minlen::Integer)
             elseif ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR
                 error("Error in zlib inflate stream ($(ret)).")
             end
-            if length(outbuf) - r.strm.avail_out > 0
-                write(r.buf, pointer(outbuf), length(outbuf) - r.strm.avail_out)
+            if (nbytes = actual_bufsize_out - r.strm.avail_out) > 0
+                #write(r.buf, pointer(outbuf), nbytes)
+                # TODO: the last two parameters are not used by notify_filled()
+                # and can be removed if Julia PR #4484 is merged
+                Base.notify_filled(r.buf, int64(nbytes), C_NULL, int32(0))
             end
             if r.strm.avail_out != 0
                 break
@@ -314,6 +320,22 @@ end
 readbytes!(r::Reader, b::AbstractArray{Uint8}, nb=length(b)) =
     readbytes!(r.buf, b, fillbuf(r, nb))
 
+function readuntil(r::Reader, delim::Uint8)
+    nb = search(r.buf, delim)
+    while nb == 0
+        offset = nb_available(r.buf)
+        fillbuf(r, offset+r.bufsize)
+        if nb_available(r.buf) == nb
+            break
+        end
+        # TODO: add offset here when https://github.com/JuliaLang/julia/pull/4485
+        # is merged
+        nb = search(r.buf, delim) #, offset)
+    end
+    if nb == 0;  nb == nb_available(r.buf); end
+    read(r.buf, Array(Uint8, nb))
+end
+
 function close(r::Reader)
     if r.closed
         return
@@ -332,7 +354,7 @@ function eof(r::Reader)
     # yield no uncompressed data. So, make sure we can get at least
     # one more byte of decompressed data before we say we haven't
     # reached EOF yet.
-    fillbuf(r, 1) == 0 && eof(r.io)
+    nb_available(r.buf) == 0 && fillbuf(r, 1) == 0 && eof(r.io)
 end
 
 function decompress(input::Vector{Uint8}, raw::Bool=false)
