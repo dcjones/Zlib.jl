@@ -284,7 +284,7 @@ function fillbuf(r::Reader, minlen::Integer)
                 #write(r.buf, pointer(outbuf), nbytes)
                 # TODO: the last two parameters are not used by notify_filled()
                 # and can be removed if Julia PR #4484 is merged
-                Base.notify_filled(r.buf, int64(nbytes), C_NULL, int32(0))
+                Base.notify_filled(r.buf, int(nbytes), C_NULL, int32(0))
             end
             if r.strm.avail_out != 0
                 break
