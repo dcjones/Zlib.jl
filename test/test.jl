@@ -57,7 +57,7 @@ for x in data
     elseif typeof(x) <: Array
         y = similar(x)
         y[:] = 0
-        @test x == read(r, y)
+        @test x == read!(r, y)
         @test x == y
     elseif typeof(x) <: SubArray
         continue # Base knows how to write, but not read

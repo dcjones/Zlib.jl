@@ -1,7 +1,7 @@
 
 module Zlib
 
-import Base: read, readuntil, readbytes!, write, close, eof
+import Base: read, read!, readuntil, readbytes!, write, close, eof
 
 export compress, decompress, crc32
 
@@ -294,15 +294,15 @@ function fillbuf(r::Reader, minlen::Integer)
     nb_available(r.buf)
 end
 
-function read{T}(r::Reader, a::Array{T})
+function read!{T}(r::Reader, a::Array{T})
     if isbits(T)
         nb = length(a)*sizeof(T)
         if fillbuf(r, nb) < nb
             throw(EOFError())
         end
-        read(r.buf, a)
+        read!(r.buf, a)
     else
-        invoke(read, (IO, Array), r, a)
+        invoke(read!, (IO, Array), r, a)
     end
     a
 end
@@ -333,7 +333,7 @@ function readuntil(r::Reader, delim::Uint8)
         nb = search(r.buf, delim) #, offset)
     end
     if nb == 0;  nb == nb_available(r.buf); end
-    read(r.buf, Array(Uint8, nb))
+    read!(r.buf, Array(Uint8, nb))
 end
 
 function close(r::Reader)
@@ -354,7 +354,7 @@ function eof(r::Reader)
     # yield no uncompressed data. So, make sure we can get at least
     # one more byte of decompressed data before we say we haven't
     # reached EOF yet.
-    nb_available(r.buf) == 0 && fillbuf(r, 1) == 0 && eof(r.io)
+    nb_available(r.buf) == 0 && eof(r.io)
 end
 
 function decompress(input::Vector{Uint8}, raw::Bool=false)
