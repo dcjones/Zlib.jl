@@ -239,9 +239,10 @@ type Reader <: IO
     buf::IOBuffer
     closed::Bool
     bufsize::Int
+    stream_end::Bool
 
     Reader(strm::z_stream, io::IO, buf::IOBuffer, closed::Bool, bufsize::Int) =
-        (r = new(strm, io, buf, closed, bufsize); finalizer(r, close); r)
+        (r = new(strm, io, buf, closed, bufsize, false); finalizer(r, close); r)
 end
 
 function Reader(io::IO, raw::Bool=false; bufsize::Int=4096)
@@ -291,6 +292,11 @@ function fillbuf(r::Reader, minlen::Integer)
             end
         end
     end
+
+    if ret == Z_STREAM_END
+        r.stream_end = true
+    end
+
     nb_available(r.buf)
 end
 
@@ -360,6 +366,9 @@ end
 function decompress(input::Vector{Uint8}, raw::Bool=false)
     r = Reader(IOBuffer(input), raw)
     b = readbytes(r)
+    if !r.stream_end
+        error("Error: zlib compressed data is incomplete or truncated")
+    end
     close(r)
     b
 end

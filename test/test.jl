@@ -41,7 +41,7 @@ data = {
 }
 
 b = IOBuffer()
-@test_throws read(w, Uint8, 1)
+@test_throws ErrorException read(w, Uint8, 1)
 w = Zlib.Writer(b)
 for x in data
     write(w, x)
@@ -50,7 +50,7 @@ close(w)
 
 seekstart(b)
 r = Zlib.Reader(b)
-@test_throws write(r, uint8(20))
+@test_throws ErrorException write(r, uint8(20))
 for x in data
     if typeof(x) == ASCIIString
         @test x == ASCIIString(read(r, Uint8, length(x)))
@@ -74,3 +74,8 @@ close(r)
 crc = crc32("Julia programming")
 @test crc == 0xc7db4271
 @test crc32(" language", crc) == 0xfc485364
+
+@test_throws ErrorException decompress(compress("abcdefghijklmnopqrstuvwxyz")[1:10])
+
+
+
