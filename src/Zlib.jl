@@ -134,7 +134,7 @@ function write(w::Writer, p::Ptr, nb::Integer)
 
     while true
         w.strm.avail_out = length(outbuf)
-        w.strm.next_out = outbuf
+        w.strm.next_out = pointer(outbuf)
 
         ret = ccall((:deflate, libz),
                     Int32, (Ptr{z_stream}, Int32),
@@ -190,13 +190,14 @@ function close(w::Writer)
     w.closed = true
 
     # flush zlib buffer using Z_FINISH
-    w.strm.next_in = Array(Uint8, 0)
+    inbuf = Array(Uint8, 0)
+    w.strm.next_in = pointer(inbuf)
     w.strm.avail_in = 0
     outbuf = Array(Uint8, 1024)
     ret = Z_OK
     while ret != Z_STREAM_END
         w.strm.avail_out = length(outbuf)
-        w.strm.next_out = outbuf
+        w.strm.next_out = pointer(outbuf)
         ret = ccall((:deflate, libz),
                     Int32, (Ptr{z_stream}, Int32),
                     &w.strm, Z_FINISH)
@@ -263,7 +264,7 @@ function fillbuf(r::Reader, minlen::Integer)
     ret = Z_OK
     while nb_available(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
         input = read(r.io, Uint8, min(nb_available(r.io), r.bufsize))
-        r.strm.next_in = input
+        r.strm.next_in = pointer(input)
         r.strm.avail_in = length(input)
         r.strm.total_in = length(input)
         #outbuf = Array(Uint8, r.bufsize)
@@ -271,7 +272,7 @@ function fillbuf(r::Reader, minlen::Integer)
         while true
             #r.strm.next_out = outbuf
             #r.strm.avail_out = length(outbuf)
-            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, uint(r.bufsize))
+            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(Uint, r.bufsize))
             actual_bufsize_out = r.strm.avail_out
             ret = ccall((:inflate, libz),
                         Int32, (Ptr{z_stream}, Int32),
@@ -285,7 +286,7 @@ function fillbuf(r::Reader, minlen::Integer)
                 #write(r.buf, pointer(outbuf), nbytes)
                 # TODO: the last two parameters are not used by notify_filled()
                 # and can be removed if Julia PR #4484 is merged
-                Base.notify_filled(r.buf, int(nbytes), C_NULL, uint(0))
+                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(Uint, 0))
             end
             if r.strm.avail_out != 0
                 break
@@ -378,9 +379,9 @@ decompress(input::String, raw::Bool=false) = decompress(convert(Vector{Uint8}, i
 
 
 function crc32(data::Vector{Uint8}, crc::Integer=0)
-    uint32(ccall((:crc32, libz),
+    convert(Uint32, (ccall((:crc32, libz),
                  Culong, (Culong, Ptr{Uint8}, Cuint),
-                 crc, data, length(data)))
+                 crc, data, length(data))))
 end
 
 crc32(data::String, crc::Integer=0) = crc32(convert(Vector{Uint8}, data), crc)

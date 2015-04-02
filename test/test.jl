@@ -31,8 +31,8 @@ end
 
 
 data = {
-    uint8(20),
-    int(42),
+    convert(Uint8, 20),
+    42,
     float(3.14),
     "julia",
     rand(5),
@@ -50,7 +50,7 @@ close(w)
 
 seekstart(b)
 r = Zlib.Reader(b)
-@test_throws ErrorException write(r, uint8(20))
+@test_throws ErrorException write(r, convert(Uint8, 20))
 for x in data
     if typeof(x) == ASCIIString
         @test x == ASCIIString(read(r, Uint8, length(x)))
