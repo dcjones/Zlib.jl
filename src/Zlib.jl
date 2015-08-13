@@ -266,7 +266,6 @@ function fillbuf(r::Reader, minlen::Integer)
         input = read(r.io, Uint8, min(nb_available(r.io), r.bufsize))
         r.strm.next_in = pointer(input)
         r.strm.avail_in = length(input)
-        r.strm.total_in = length(input)
         #outbuf = Array(Uint8, r.bufsize)
 
         while true
