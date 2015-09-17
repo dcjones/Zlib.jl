@@ -1,7 +1,7 @@
 using Base.Test
 using Zlib
 
-data = convert(Vector{Uint8}, rand(1:255, 1000000))
+data = convert(Vector{UInt8}, rand(1:255, 1000000))
 decompressed = decompress(compress(data))
 @test data == decompressed
 
@@ -23,25 +23,25 @@ seekstart(b)
 
 seekstart(b)
 r = Zlib.Reader(b)
-decompressed = Array(Uint8, 0)
+decompressed = Array(UInt8, 0)
 while !eof(r)
-    append!(decompressed, read(r, Uint8, 200000))
+    append!(decompressed, read(r, UInt8, 200000))
 end
 @test data == decompressed
 
 
-data = {
-    convert(Uint8, 20),
+data = Any[
+    convert(UInt8, 20),
     42,
     float(3.14),
     "julia",
     rand(5),
     rand(3, 4),
-    sub(rand(10,10), 2:8,2:4),
-}
+    sub(rand(10,10), 2:8,2:4)
+]
 
 b = IOBuffer()
-@test_throws ErrorException read(w, Uint8, 1)
+@test_throws ErrorException read(w, UInt8, 1)
 w = Zlib.Writer(b)
 for x in data
     write(w, x)
@@ -50,10 +50,10 @@ close(w)
 
 seekstart(b)
 r = Zlib.Reader(b)
-@test_throws ErrorException write(r, convert(Uint8, 20))
+@test_throws ErrorException write(r, convert(UInt8, 20))
 for x in data
     if typeof(x) == ASCIIString
-        @test x == ASCIIString(read(r, Uint8, length(x)))
+        @test x == ASCIIString(read(r, UInt8, length(x)))
     elseif typeof(x) <: Array
         y = similar(x)
         y[:] = 0

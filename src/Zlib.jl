@@ -1,6 +1,8 @@
 
 module Zlib
 
+using Compat
+
 import Base: read, read!, readuntil, readbytes!, write, close, eof
 
 export compress, decompress, crc32
@@ -28,15 +30,15 @@ const Z_VERSION_ERROR = -6
 
 # The zlib z_stream structure.
 type z_stream
-    next_in::Ptr{Uint8}
+    next_in::Ptr{UInt8}
     avail_in::Cuint
     total_in::Culong
 
-    next_out::Ptr{Uint8}
+    next_out::Ptr{UInt8}
     avail_out::Cuint
     total_out::Culong
 
-    msg::Ptr{Uint8}
+    msg::Ptr{UInt8}
     state::Ptr{Void}
 
     zalloc::Ptr{Void}
@@ -72,12 +74,12 @@ type gz_header
     time::Culong        # modification time
     xflags::Cint        # extra flags (not used when writing a gzip file)
     os::Cint            # operating system
-    extra::Ptr{Uint8}   # pointer to extra field or Z_NULL if none
+    extra::Ptr{UInt8}   # pointer to extra field or Z_NULL if none
     extra_len::Cuint    # extra field length (valid if extra != Z_NULL)
     extra_max::Cuint    # space at extra (only when reading header)
-    name::Ptr{Uint8}    # pointer to zero-terminated file name or Z_NULL
+    name::Ptr{UInt8}    # pointer to zero-terminated file name or Z_NULL
     name_max::Cuint     # space at name (only when reading header)
-    comment::Ptr{Uint8} # pointer to zero-terminated comment or Z_NULL
+    comment::Ptr{UInt8} # pointer to zero-terminated comment or Z_NULL
     comm_max::Cuint     # space at comment (only when reading header)
     hcrc::Cint          # true if there was or will be a header crc
     done::Cint          # true when done reading gzip header (not used
@@ -86,7 +88,7 @@ type gz_header
 end
 
 function zlib_version()
-    ccall((:zlibVersion, libz), Ptr{Uint8}, ())
+    ccall((:zlibVersion, libz), Ptr{UInt8}, ())
 end
 
 type Writer <: IO
@@ -105,7 +107,7 @@ function Writer(io::IO, level::Integer, gzip::Bool=false, raw::Bool=false)
 
     strm = z_stream()
     ret = ccall((:deflateInit2_, libz),
-                Int32, (Ptr{z_stream}, Cint, Cint, Cint, Cint, Cint, Ptr{Uint8}, Int32),
+                Int32, (Ptr{z_stream}, Cint, Cint, Cint, Cint, Cint, Ptr{UInt8}, Int32),
                 &strm, level, 8, raw? -15 : 15+gzip*16, 8, 0, zlib_version(), sizeof(z_stream))
 
     if ret != Z_OK
@@ -130,7 +132,7 @@ Writer(io::IO, gzip::Bool=false, raw::Bool=false) = Writer(io, 9, gzip, raw)
 function write(w::Writer, p::Ptr, nb::Integer)
     w.strm.next_in = p
     w.strm.avail_in = nb
-    outbuf = Array(Uint8, 1024)
+    outbuf = Array(UInt8, 1024)
 
     while true
         w.strm.avail_out = length(outbuf)
@@ -179,8 +181,8 @@ function write{T,N,A<:Array}(w::Writer, a::SubArray{T,N,A})
     end
 end
 
-function write(w::Writer, b::Uint8)
-    write(w, Uint8[b])
+function write(w::Writer, b::UInt8)
+    write(w, UInt8[b])
 end
 
 function close(w::Writer)
@@ -190,10 +192,10 @@ function close(w::Writer)
     w.closed = true
 
     # flush zlib buffer using Z_FINISH
-    inbuf = Array(Uint8, 0)
+    inbuf = Array(UInt8, 0)
     w.strm.next_in = pointer(inbuf)
     w.strm.avail_in = 0
-    outbuf = Array(Uint8, 1024)
+    outbuf = Array(UInt8, 1024)
     ret = Z_OK
     while ret != Z_STREAM_END
         w.strm.avail_out = length(outbuf)
@@ -216,7 +218,7 @@ function close(w::Writer)
     end
 end
 
-function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::Bool=false)
+function compress(input::Vector{UInt8}, level::Integer, gzip::Bool=false, raw::Bool=false)
     b = IOBuffer()
     w = Writer(b, level, gzip, raw)
     write(w, input)
@@ -225,13 +227,13 @@ function compress(input::Vector{Uint8}, level::Integer, gzip::Bool=false, raw::B
 end
 
 
-function compress(input::String, level::Integer, gzip::Bool=false, raw::Bool=false)
-    compress(convert(Vector{Uint8}, input), level, gzip, raw)
+function compress(input::AbstractString, level::Integer, gzip::Bool=false, raw::Bool=false)
+    compress(convert(Vector{UInt8}, input), level, gzip, raw)
 end
 
 
-compress(input::Vector{Uint8}, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
-compress(input::String, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
+compress(input::Vector{UInt8}, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
+compress(input::AbstractString, gzip::Bool=false, raw::Bool=false) = compress(input, 9, gzip, raw)
 
 
 type Reader <: IO
@@ -249,7 +251,7 @@ end
 function Reader(io::IO, raw::Bool=false; bufsize::Int=4096)
     strm = z_stream()
     ret = ccall((:inflateInit2_, libz),
-                Int32, (Ptr{z_stream}, Cint, Ptr{Uint8}, Int32),
+                Int32, (Ptr{z_stream}, Cint, Ptr{UInt8}, Int32),
                 &strm, raw? -15 : 47, zlib_version(), sizeof(z_stream))
     if ret != Z_OK
         error("Error initializing zlib inflate stream.")
@@ -263,15 +265,15 @@ end
 function fillbuf(r::Reader, minlen::Integer)
     ret = Z_OK
     while nb_available(r.buf) < minlen && !eof(r.io) && ret != Z_STREAM_END
-        input = read(r.io, Uint8, min(nb_available(r.io), r.bufsize))
+        input = read(r.io, UInt8, min(nb_available(r.io), r.bufsize))
         r.strm.next_in = pointer(input)
         r.strm.avail_in = length(input)
-        #outbuf = Array(Uint8, r.bufsize)
+        #outbuf = Array(UInt8, r.bufsize)
 
         while true
             #r.strm.next_out = outbuf
             #r.strm.avail_out = length(outbuf)
-            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(Uint, r.bufsize))
+            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(UInt, r.bufsize))
             actual_bufsize_out = r.strm.avail_out
             ret = ccall((:inflate, libz),
                         Int32, (Ptr{z_stream}, Int32),
@@ -285,7 +287,7 @@ function fillbuf(r::Reader, minlen::Integer)
                 #write(r.buf, pointer(outbuf), nbytes)
                 # TODO: the last two parameters are not used by notify_filled()
                 # and can be removed if Julia PR #4484 is merged
-                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(Uint, 0))
+                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(UInt, 0))
             end
             if r.strm.avail_out != 0
                 break
@@ -298,6 +300,16 @@ function fillbuf(r::Reader, minlen::Integer)
     end
 
     nb_available(r.buf)
+end
+
+# This is to fix the ambiguity with Base.read!
+function read!(r::Reader, a::Vector{UInt8})
+    nb = length(a)
+    if fillbuf(r, nb) < nb
+        throw(EOFError())
+    end
+    read!(r.buf, a)
+    a
 end
 
 function read!{T}(r::Reader, a::Array{T})
@@ -314,19 +326,19 @@ function read!{T}(r::Reader, a::Array{T})
 end
 
 # This function needs to be fast because other read calls use it.
-function read(r::Reader, ::Type{Uint8})
+function read(r::Reader, ::Type{UInt8})
     if nb_available(r.buf) < 1 && fillbuf(r, 1) < 1
         throw(EOFError())
     end
-    read(r.buf, Uint8)
+    read(r.buf, UInt8)
 end
 
 # This is faster than using the generic implementation in Base. We use
 # it (indirectly) for decompress below.
-readbytes!(r::Reader, b::AbstractArray{Uint8}, nb=length(b)) =
+readbytes!(r::Reader, b::AbstractArray{UInt8}, nb=length(b)) =
     readbytes!(r.buf, b, fillbuf(r, nb))
 
-function readuntil(r::Reader, delim::Uint8)
+function readuntil(r::Reader, delim::UInt8)
     nb = search(r.buf, delim)
     while nb == 0
         offset = nb_available(r.buf)
@@ -339,7 +351,7 @@ function readuntil(r::Reader, delim::Uint8)
         nb = search(r.buf, delim) #, offset)
     end
     if nb == 0;  nb == nb_available(r.buf); end
-    read!(r.buf, Array(Uint8, nb))
+    read!(r.buf, Array(UInt8, nb))
 end
 
 function close(r::Reader)
@@ -363,7 +375,7 @@ function eof(r::Reader)
     nb_available(r.buf) == 0 && eof(r.io)
 end
 
-function decompress(input::Vector{Uint8}, raw::Bool=false)
+function decompress(input::Vector{UInt8}, raw::Bool=false)
     r = Reader(IOBuffer(input), raw)
     b = readbytes(r)
     if !r.stream_end
@@ -374,15 +386,15 @@ function decompress(input::Vector{Uint8}, raw::Bool=false)
 end
 
 
-decompress(input::String, raw::Bool=false) = decompress(convert(Vector{Uint8}, input), raw)
+decompress(input::AbstractString, raw::Bool=false) = decompress(convert(Vector{UInt8}, input), raw)
 
 
-function crc32(data::Vector{Uint8}, crc::Integer=0)
-    convert(Uint32, (ccall((:crc32, libz),
-                 Culong, (Culong, Ptr{Uint8}, Cuint),
+function crc32(data::Vector{UInt8}, crc::Integer=0)
+    convert(UInt32, (ccall((:crc32, libz),
+                 Culong, (Culong, Ptr{UInt8}, Cuint),
                  crc, data, length(data))))
 end
 
-crc32(data::String, crc::Integer=0) = crc32(convert(Vector{Uint8}, data), crc)
+crc32(data::AbstractString, crc::Integer=0) = crc32(convert(Vector{UInt8}, data), crc)
 
 end # module

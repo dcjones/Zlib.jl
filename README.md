@@ -9,15 +9,15 @@ follows.
 ### Basic API
 
 ```julia
-# Compress data, ouputting a Vector{Uint8} where data is either a Vector{Uint8}
-# or a String.
+# Compress data, ouputting a Vector{UInt8} where data is either a Vector{UInt8}
+# or a AbstractString.
 compress(data)
 
 # Compress at a particular level in [1, 9]
 compress("Hello world", 5)
 
-# Decompress to a Vector{Uint8} where data is either a Vector{Uint8} or a
-# String.
+# Decompress to a Vector{UInt8} where data is either a Vector{UInt8} or a
+# AbstractString.
 decompress(data)
 ```
 
@@ -47,8 +47,8 @@ Writer(io::IO, level::Integer, gzip::Bool=false, raw::Bool=false)
 
 ### crc32
 
-`crc32(data::Vector{Uint8}, crc::Integer=0)`
-`crc32(data::String, crc::Integer=0)`
+`crc32(data::Vector{UInt8}, crc::Integer=0)`
+`crc32(data::AbstractString, crc::Integer=0)`
 
 Compute and return the 32-bit cycle redundancy check on `data`, updating a
 running value `crc`.
@@ -60,5 +60,3 @@ crc32("hello")
 ```
 0x3610a686
 ```
-
-
