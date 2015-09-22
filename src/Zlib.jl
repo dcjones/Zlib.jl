@@ -178,12 +178,14 @@ function write{T,N,A<:Array}(w::Writer, a::SubArray{T,N,A})
         # WARNING: cartesianmap(f,dims) is deprecated, use for idx = CartesianRange(dims)
         #     f(idx.I...)
 
-        for idx in CartesianRange(tuple(1, size(a)[2:end]...))
-            write(w, pointer(a, idx.I), colsz)
+        if VERSION >= v"0.4.0-"
+            for idx in CartesianRange(tuple(1, size(a)[2:end]...))
+                write(w, pointer(a, idx.I), colsz)
+            end
+        else
+            cartesianmap((idxs...)->write(w, pointer(a, idxs), colsz),
+                        tuple(1, size(a)[2:end]...))
         end
-
-        #cartesianmap((idxs...)->write(w, pointer(a, idxs), colsz),
-        #             tuple(1, size(a)[2:end]...))
 
         return colsz*Base.trailingsize(a,2)
     end
