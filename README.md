@@ -4,7 +4,7 @@
 Zlib bindings for Julia.
 
 **Note:** This library is currently maintained, but should be considered
-deprecated in favor of [https://github.com/BioJulia/Libz.jl](Libz.jl), which is
+deprecated in favor of [Libz.jl](https://github.com/BioJulia/Libz.jl), which is
 in every way better.
 
 This library provides a `compress` and `decompress` function that work as
