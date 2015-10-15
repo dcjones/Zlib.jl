@@ -175,8 +175,18 @@ function write{T,N,A<:Array}(w::Writer, a::SubArray{T,N,A})
     if N<=1
         return write(s, pointer(a, 1), colsz)
     else
-        cartesianmap((idxs...)->write(w, pointer(a, idxs), colsz),
-                     tuple(1, size(a)[2:end]...))
+        # WARNING: cartesianmap(f,dims) is deprecated, use for idx = CartesianRange(dims)
+        #     f(idx.I...)
+
+        if VERSION >= v"0.4.0-"
+            for idx in CartesianRange(tuple(1, size(a)[2:end]...))
+                write(w, pointer(a, idx.I), colsz)
+            end
+        else
+            cartesianmap((idxs...)->write(w, pointer(a, idxs), colsz),
+                        tuple(1, size(a)[2:end]...))
+        end
+
         return colsz*Base.trailingsize(a,2)
     end
 end
@@ -273,7 +283,7 @@ function fillbuf(r::Reader, minlen::Integer)
         while true
             #r.strm.next_out = outbuf
             #r.strm.avail_out = length(outbuf)
-            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(UInt, r.bufsize))
+            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(UInt64, r.bufsize))
             actual_bufsize_out = r.strm.avail_out
             ret = ccall((:inflate, libz),
                         Int32, (Ptr{z_stream}, Int32),
@@ -287,7 +297,7 @@ function fillbuf(r::Reader, minlen::Integer)
                 #write(r.buf, pointer(outbuf), nbytes)
                 # TODO: the last two parameters are not used by notify_filled()
                 # and can be removed if Julia PR #4484 is merged
-                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(UInt, 0))
+                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(UInt64, 0))
             end
             if r.strm.avail_out != 0
                 break

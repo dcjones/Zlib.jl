@@ -1,5 +1,6 @@
 using Base.Test
 using Zlib
+using Compat
 
 data = convert(Vector{UInt8}, rand(1:255, 1000000))
 decompressed = decompress(compress(data))

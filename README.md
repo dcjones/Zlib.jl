@@ -14,13 +14,13 @@ follows.
 
 ```julia
 # Compress data, ouputting a Vector{UInt8} where data is either a Vector{UInt8}
-# or a AbstractString.
+# or an AbstractString.
 compress(data)
 
 # Compress at a particular level in [1, 9]
 compress("Hello world", 5)
 
-# Decompress to a Vector{UInt8} where data is either a Vector{UInt8} or a
+# Decompress to a Vector{UInt8} where data is either a Vector{UInt8} or an
 # AbstractString.
 decompress(data)
 ```
