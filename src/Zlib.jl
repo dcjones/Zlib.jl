@@ -283,7 +283,7 @@ function fillbuf(r::Reader, minlen::Integer)
         while true
             #r.strm.next_out = outbuf
             #r.strm.avail_out = length(outbuf)
-            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(UInt64, r.bufsize))
+            (r.strm.next_out, r.strm.avail_out) = Base.alloc_request(r.buf, convert(UInt, r.bufsize))
             actual_bufsize_out = r.strm.avail_out
             ret = ccall((:inflate, libz),
                         Int32, (Ptr{z_stream}, Int32),
@@ -297,7 +297,7 @@ function fillbuf(r::Reader, minlen::Integer)
                 #write(r.buf, pointer(outbuf), nbytes)
                 # TODO: the last two parameters are not used by notify_filled()
                 # and can be removed if Julia PR #4484 is merged
-                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(UInt64, 0))
+                Base.notify_filled(r.buf, convert(Int, nbytes), C_NULL, convert(UInt, 0))
             end
             if r.strm.avail_out != 0
                 break
