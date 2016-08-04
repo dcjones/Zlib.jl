@@ -1,4 +1,3 @@
-
 module Zlib
 
 using Compat
@@ -25,8 +24,11 @@ const Z_MEM_ERROR     = -4
 const Z_BUF_ERROR     = -5
 const Z_VERSION_ERROR = -6
 
-@unix_only const libz = "libz"
-@windows_only const libz = "zlib1"
+if is_windows()
+    const libz = "zlib1"
+else
+    const libz = "libz"
+end
 
 # The zlib z_stream structure.
 type z_stream
@@ -156,6 +158,8 @@ function write(w::Writer, p::Ptr, nb::Integer)
     nb
 end
 
+# Resolve ambiguity
+write(w::Writer, a::Array{UInt8}) = write(w, pointer(a), length(a))
 # If this is not provided, Base.IO write methods will write
 # arrays one element at a time.
 function write{T}(w::Writer, a::Array{T})
@@ -387,7 +391,7 @@ end
 
 function decompress(input::Vector{UInt8}, raw::Bool=false)
     r = Reader(IOBuffer(input), raw)
-    b = readbytes(r)
+    b = read(r)
     if !r.stream_end
         error("Error: zlib compressed data is incomplete or truncated")
     end
