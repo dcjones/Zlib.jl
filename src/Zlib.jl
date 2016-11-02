@@ -26,8 +26,11 @@ const Z_MEM_ERROR     = -4
 const Z_BUF_ERROR     = -5
 const Z_VERSION_ERROR = -6
 
-@unix_only const libz = "libz"
-@windows_only const libz = "zlib1"
+if is_windows()
+    const libz = "zlib1"
+else
+    const libz = "libz"
+end
 
 # The zlib z_stream structure.
 type z_stream
@@ -157,20 +160,22 @@ function write(w::Writer, p::Ptr, nb::Integer)
     nb
 end
 
+# Resolve ambiguity
+write(w::Writer, a::Array{UInt8}) = write(w, pointer(a), length(a))
 # If this is not provided, Base.IO write methods will write
 # arrays one element at a time.
 function write{T}(w::Writer, a::Array{T})
     if isbits(T)
         write(w, pointer(a), length(a)*sizeof(T))
     else
-        invoke(write, (IO, Array), w, a)
+        @compat invoke(write, Tuple{IO,Array}, w, a)
     end
 end
 
 # Copied from Julia base/io.jl
 function write{T,N,A<:Array}(w::Writer, a::SubArray{T,N,A})
     if !isbits(T) || stride(a,1)!=1
-        return invoke(write, (Any, AbstractArray), s, a)
+        @compat return invoke(write, Tuple{Any,AbstractArray}, s, a)
     end
     colsz = size(a,1)*sizeof(T)
     if N<=1
@@ -331,7 +336,7 @@ function read!{T}(r::Reader, a::Array{T})
         end
         read!(r.buf, a)
     else
-        invoke(read!, (IO, Array), r, a)
+        @compat invoke(read!, Tuple{IO,Array}, r, a)
     end
     a
 end
@@ -388,7 +393,7 @@ end
 
 function decompress(input::Vector{UInt8}, raw::Bool=false)
     r = Reader(IOBuffer(input), raw)
-    b = readbytes(r)
+    b = read(r)
     if !r.stream_end
         error("Error: zlib compressed data is incomplete or truncated")
     end
